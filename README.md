@@ -244,13 +244,3 @@ Every angle command is clamped to the mechanical limits defined in the `JointCon
 | Communication | Serial (UART) @ 115200 baud |
 
 ---
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-<p align="center">
-  <em>Designed and built by <strong>Jaiaditya Asudani</strong></em>
-</p>
