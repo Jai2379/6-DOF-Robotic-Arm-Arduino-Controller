@@ -2,11 +2,6 @@
 
 A fully articulated 6-degree-of-freedom robotic arm designed from scratch in SolidWorks and driven by an Arduino-based servo control system. The mechanical design mirrors real industrial robotics architectures — parallel linkages, modular joints, and a kinematic chain built for precision.
 
-![Status](https://img.shields.io/badge/status-active_development-D4860A)
-![Platform](https://img.shields.io/badge/platform-Arduino_Mega_2560-00979D)
-![Language](https://img.shields.io/badge/language-C++-00599C)
-![License](https://img.shields.io/badge/license-MIT-green)
-
 ---
 
 ## Overview
@@ -96,7 +91,7 @@ Six degrees of freedom — the same mobility as a human arm. This project spans 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Jai2379/6-DOF-Robotic-Arm.git
+git clone https://github.com/Jai2379/6-DOF-Robotic-Arm-Arduino-Controller.git
 cd 6-DOF-Robotic-Arm
 ```
 
