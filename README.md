@@ -1,241 +1,120 @@
-# 6-DOF Robotic Arm — Arduino Controller
+# 6-DOF Robotic Arm: Arduino Servo Controller
 
-A fully articulated 6-degree-of-freedom robotic arm designed from scratch in SolidWorks and driven by an Arduino-based servo control system. The mechanical design mirrors real industrial robotics architectures — parallel linkages, modular joints, and a kinematic chain built for precision.
+SolidWorks design of an articulated arm with a parallel-linkage lower arm, plus Arduino firmware that drives its six servos (five positioning axes and a gripper) through clamped, coordinated joint-space moves over a serial command protocol.
 
----
-
-## Overview
-
-Six degrees of freedom — the same mobility as a human arm. This project spans the full engineering pipeline: mechanical design in SolidWorks, kinematic modeling, and real-time servo control via Arduino. The arm features a parallel-linkage shoulder, articulated elbow, 2-axis wrist, and a mechanical gripper, all coordinated through a custom motion interpolation engine.
-
-### Joint Architecture
+## Kinematic chain
 
 ```
-                        ┌─── J3: Wrist Pitch
-                        │    ┌─── J4: Wrist Roll
-                        │    │    ┌─── J5: Gripper
-    ┌───────────────────┤    │    │
-    │   Upper Arm       └────┴────┴──── 🦾 End Effector
-    │
-    ├─── J2: Elbow
-    │
-    │   Lower Arm
-    │   (Parallel Linkage)
-    │
-    ├─── J1: Shoulder
-    │
-    └─── J0: Base Rotation
-         ═══════════════
-         Circular Platform
+J0 base yaw ─► J1 shoulder ─► J2 elbow ─► J3 wrist pitch ─► J4 wrist roll ─► J5 gripper
+   (platform)    (parallel-linkage lower arm)                                   (claw)
 ```
 
-| Joint | Function | Servo | Range | Home | Notes |
-|-------|----------|-------|-------|------|-------|
-| J0 | Base Rotation | MG996R | 0°–180° | 90° | Horizontal yaw on circular platform |
-| J1 | Shoulder | MG996R | 15°–165° | 90° | Parallel-linkage lower arm; limits prevent base collision |
-| J2 | Elbow | MG996R | 0°–180° | 90° | Upper arm articulation |
-| J3 | Wrist Pitch | MG90S | 0°–180° | 90° | End-effector tilt |
-| J4 | Wrist Roll | MG90S | 0°–180° | 90° | End-effector rotation |
-| J5 | Gripper | MG90S | 10°–73° | 10° | Claw open (10°) / closed (73°) |
+| Joint | Function | Pin | Range | Home | Servo |
+|:--|:--|:--|:--|:--|:--|
+| J0 | Base yaw | 2 | 0–180° | 90° | MG996R |
+| J1 | Shoulder | 3 | 15–165° | 90° | MG996R |
+| J2 | Elbow | 4 | 0–180° | 90° | MG996R |
+| J3 | Wrist pitch | 5 | 0–180° | 90° | MG90S |
+| J4 | Wrist roll | 6 | 0–180° | 90° | MG90S |
+| J5 | Gripper | 7 | 10–73° | 10° (open) | MG90S |
 
----
+J1 is limited to 15–165° so the parallel linkage cannot collide with the base platform in the assembly. The gripper range maps 10° to fully open and 73° to fully closed.
 
-## Features
+## Firmware design
 
-- **Coordinated Joint Motion** — All 6 joints interpolate proportionally toward their targets simultaneously, producing smooth, natural arm trajectories instead of jerky sequential moves
-- **Mechanical Joint Limits** — Software-enforced angle constraints match the physical range of each joint in the SolidWorks assembly, preventing self-collision and servo damage
-- **Serial Command Interface** — Full real-time control over 115200 baud serial. Move individual joints, trigger preset sequences, or adjust speed on the fly
-- **Preset Sequences** — Built-in pick-and-place demo and wave gesture that chain coordinated multi-joint movements
-- **Adjustable Speed** — Step delay configurable from 1ms (fast) to 100ms (slow) per degree of travel
-- **Modular Design** — Joint configuration is table-driven (`JointConfig` struct), making it trivial to adjust limits, pins, or home positions without touching motion logic
+**Table-driven joint config.** All per-joint data lives in one `const JointConfig JOINTS[6]` array (`name`, `pin`, `minAngle`, `maxAngle`, `homeAngle`). Limits, pins and home poses change in one place without touching motion code.
 
----
+**Clamping.** Every target passes through `clampAngle(joint, angle)` before it reaches a servo, including serial input and preset poses.
 
-## Hardware Requirements
-
-### Components
-
-| Component | Qty | Purpose |
-|-----------|-----|---------|
-| Arduino Mega 2560 | 1 | Controller (Uno works but Mega recommended for pin count) |
-| MG996R Servo | 3 | Base, Shoulder, Elbow (high-torque joints) |
-| MG90S Servo | 3 | Wrist Pitch, Wrist Roll, Gripper (lighter joints) |
-| 6V 5A DC Power Supply | 1 | Dedicated servo power — **do not use Arduino 5V** |
-| Breadboard / PCB | 1 | Power distribution and signal routing |
-| Jumper Wires | ~20 | Signal + power connections |
-
-### Wiring Diagram
-
-```
-                    ┌──────────────────────┐
-                    │   Arduino Mega 2560  │
-                    │                      │
-   Servo J0 ◄──────┤ Pin 2          GND ──┼──── Common GND ────┐
-   Servo J1 ◄──────┤ Pin 3                │                    │
-   Servo J2 ◄──────┤ Pin 4                │                    │
-   Servo J3 ◄──────┤ Pin 5                │      ┌─────────┐   │
-   Servo J4 ◄──────┤ Pin 6                │      │  6V 5A  │   │
-   Servo J5 ◄──────┤ Pin 7                │      │  PSU    │   │
-                    │                      │      │         │   │
-                    └──────────────────────┘      │ V+ ─────┼───┼──► Servo V+
-                                                  │ GND ────┼───┘
-                                                  └─────────┘
-```
-
-> ⚠️ **Critical**: Servo motors draw significant current under load (up to 2.5A stall per MG996R). Always use a dedicated external power supply. Powering servos from the Arduino's 5V rail will cause brownouts, erratic behavior, and potential board damage.
-
----
-
-## Installation
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/Jai2379/6-DOF-Robotic-Arm-Arduino-Controller.git
-cd 6-DOF-Robotic-Arm
-```
-
-### 2. Open in Arduino IDE
-
-- Open `robotic_arm.ino` in Arduino IDE (1.8+ or 2.0+)
-- Select board: **Arduino Mega 2560** (or your board)
-- Select the correct COM port
-
-### 3. Upload
-
-- Verify/compile: `Ctrl+R`
-- Upload: `Ctrl+U`
-- Open Serial Monitor: `Ctrl+Shift+M` → Set baud to **115200**
-
----
-
-## Usage
-
-### Serial Commands
-
-All commands are sent via Serial Monitor at **115200 baud**. Commands are case-insensitive.
-
-| Command | Action | Example |
-|---------|--------|---------|
-| `Jn:angle` | Move joint `n` to `angle` degrees | `J0:45` — rotate base to 45° |
-| `HOME` | All joints return to home position | — |
-| `PARK` | Fold arm into compact storage pose | — |
-| `PICK` | Run pick-and-place demo sequence | — |
-| `WAVE` | Friendly wave gesture | — |
-| `GRIP:angle` | Set gripper angle (shortcut for J5) | `GRIP:73` — close gripper |
-| `SPEED:ms` | Set interpolation step delay (1–100) | `SPEED:8` — fast movement |
-| `POS` | Print all current joint positions | — |
-| `HELP` | Display command reference | — |
-
-### Example Session
-
-```
-═══════════════════════════════════════
-  6-DOF Robotic Arm Controller v1.0
-  Joints: Base | Shoulder | Elbow
-          Wrist Pitch | Roll | Gripper
-═══════════════════════════════════════
-  ✓ J0 [Base] attached to pin 2 @ 90°
-  ✓ J1 [Shoulder] attached to pin 3 @ 90°
-  ✓ J2 [Elbow] attached to pin 4 @ 90°
-  ✓ J3 [Wrist Pitch] attached to pin 5 @ 90°
-  ✓ J4 [Wrist Roll] attached to pin 6 @ 90°
-  ✓ J5 [Gripper] attached to pin 7 @ 10°
-
-> J0:45
-[MOVE] Base -> 45°
-
-> GRIP:73
-[MOVE] Gripper -> 73°
-
-> POS
-─── Current Joint Positions ───
-  J0 [Base]: 45°  (0–180°)
-  J1 [Shoulder]: 90°  (15–165°)
-  J2 [Elbow]: 90°  (0–180°)
-  J3 [Wrist Pitch]: 90°  (0–180°)
-  J4 [Wrist Roll]: 90°  (0–180°)
-  J5 [Gripper]: 73°  (10–73°)
-───────────────────────────────
-
-> PICK
-[SEQ] Starting PICK sequence...
-  -> Pre-pick position
-  -> Reaching...
-  -> Gripping
-  -> Lifting
-  -> Rotating to drop zone
-  -> Releasing
-[INFO] Moving to HOME position...
-[INFO] HOME reached.
-[SEQ] PICK sequence complete.
-```
-
----
-
-## Project Structure
-
-```
-6-DOF-Robotic-Arm/
-├── robotic_arm.ino       # Main Arduino sketch — all control logic
-├── README.md             # This file
-└── solidworks/           # (Optional) SolidWorks assembly files
-    ├── full_assembly.SLDASM
-    ├── base.SLDPRT
-    ├── lower_arm.SLDPRT
-    ├── upper_arm.SLDPRT
-    ├── wrist.SLDPRT
-    └── gripper.SLDPRT
-```
-
----
-
-## How It Works
-
-### Motion Interpolation
-
-The arm doesn't move joints one at a time — it coordinates all 6 simultaneously. The `moveAllJoints()` function finds the joint with the largest angular travel and uses it as the reference. All other joints are linearly interpolated over the same number of steps:
+**Coordinated interpolation.** `moveAllJoints(targets[])` finds the largest angular travel `Δmax` across the six joints and steps every joint along a straight line in joint space:
 
 ```cpp
 for (int step = 1; step <= maxDelta; step++) {
     for (uint8_t i = 0; i < NUM_JOINTS; i++) {
-        int pos = startAngle[i] + (delta[i] * step) / maxDelta;
+        int pos = currentAngle[i] + (delta[i] * step) / maxDelta;
         servos[i].write(pos);
     }
     delay(stepDelayMs);
 }
 ```
 
-This produces smooth, coordinated motion where all joints arrive at their targets at the same time — regardless of how far each one needs to travel.
+All joints start and finish together. Move time is `Δmax × stepDelayMs`, so a 90° move at the default 15 ms/step takes 1.35 s plus servo lag. Integer division keeps the loop free of floating point on the AVR. A final write lands each joint exactly on target.
 
-### Safety: Joint Limits
+**Single-joint moves.** `moveJoint(j, target)` steps one joint 1° at a time. The gripper uses it so grip and release happen independently of arm motion.
 
-Every angle command is clamped to the mechanical limits defined in the `JointConfig` table before being sent to the servo. The shoulder joint (J1) is intentionally constrained to 15°–165° to prevent the parallel-linkage arm from colliding with the base platform — a constraint derived directly from the SolidWorks interference analysis.
+**Speed control.** `stepDelayMs` defaults to 15 ms and accepts 1–100 ms at runtime.
 
----
+## Serial protocol
 
-## Roadmap
+115200 baud, newline-terminated, case-insensitive. Input is trimmed and upper-cased before parsing.
 
-- [x] SolidWorks mechanical design — full 6-DOF assembly
-- [x] Arduino servo control with smooth interpolation
-- [x] Serial command interface
-- [x] Preset motion sequences (PICK, WAVE)
-- [ ] Inverse kinematics solver — move to XYZ coordinates instead of joint angles
-- [ ] Joystick / gamepad input for real-time manual control
-- [ ] Sensor integration — force-sensitive gripper feedback
-- [ ] ROS integration for advanced path planning
-- [ ] 3D-printed enclosures for servo mounts and wiring
+| Command | Effect |
+|:--|:--|
+| `Jn:angle` | Move joint `n` (0–5) to `angle`, clamped to its limits |
+| `GRIP:angle` | Gripper shortcut for `J5` |
+| `SPEED:ms` | Set step delay, 1–100 ms |
+| `HOME` | All joints to home pose |
+| `PARK` | Folded pose `{90, 150, 30, 90, 90, 10}` |
+| `PICK` | Pick-and-place sequence |
+| `WAVE` | Wrist-pitch oscillation 45°↔135°, three cycles |
+| `POS` | Print each joint's current angle and limits |
+| `HELP` | Print command table |
 
----
+Responses carry a tag: `[MOVE]`, `[SEQ]`, `[INFO]` or `[ERR]`.
 
-## Tech Stack
+`PICK` runs these poses as `{J0, J1, J2, J3, J4, J5}`:
 
-| Layer | Technology |
-|-------|-----------|
-| Mechanical Design | SolidWorks 2024 |
-| Microcontroller | Arduino Mega 2560 |
-| Language | C++ (Arduino framework) |
-| Actuators | MG996R / MG90S Servo Motors |
-| Communication | Serial (UART) @ 115200 baud |
+| Phase | Pose |
+|:--|:--|
+| Pre-pick | `{90, 60, 120, 130, 90, 10}` |
+| Reach | `{90, 45, 135, 140, 90, 10}` |
+| Grip | J5 → 73 |
+| Lift | `{90, 90, 90, 90, 90, 73}` |
+| Rotate to drop | `{45, 90, 90, 90, 90, 73}` |
+| Release | J5 → 10, then `HOME` |
 
----
+## Hardware
+
+| Component | Qty | Notes |
+|:--|:--|:--|
+| Arduino Mega 2560 | 1 | Uno also works. PWM on pins 2–7 |
+| MG996R | 3 | J0–J2, high-torque joints |
+| MG90S | 3 | J3–J5 |
+| 6 V 5 A supply | 1 | Servo rail. Shares ground with the Arduino |
+
+An MG996R draws up to about 2.5 A at stall. The servos run from the external 6 V rail, never the Arduino's 5 V regulator, which browns out under that load.
+
+```
+Arduino Mega            6 V / 5 A PSU
+  D2..D7 ── signal ──►  servos J0..J5
+  GND ─────────────────  GND ──► servo GND
+                         V+  ──► servo V+
+```
+
+## CAD
+
+SolidWorks part and assembly files, in the repo root:
+
+| File | Part |
+|:--|:--|
+| `Base (part 1)].SLDPRT` | Fixed base |
+| `Rotational Base (Part 2).SLDPRT` | Yaw platform (J0) |
+| `Arm Link (Part3).SLDPRT` | Lower arm link |
+| `Arm Link 2 (Part 4).SLDPRT` | Upper arm link |
+| `Gripper Base (Part 5).SLDPRT` | Gripper mount |
+| `Gripper Link (Part 6).SLDPRT` | Gripper linkage |
+| `Gripper Finger (Part 7).SLDPRT` | Finger |
+| `Gripper Joint (Part 8).SLDPRT` | Finger pivot |
+| `Full scale assembly.SLDASM` | Full assembly |
+
+## Build
+
+1. Open `robotic_arm.ino` in Arduino IDE 1.8+ or 2.x. The only dependency is the bundled `Servo` library.
+2. Select **Arduino Mega 2560** and the board's port, then upload.
+3. Open Serial Monitor at **115200** baud with newline line endings and send `HELP`.
+
+## Next
+
+- Inverse kinematics so commands can target XYZ positions instead of joint angles.
+- Non-blocking motion with `millis()` scheduling. Moves currently block on `delay()`, so serial input waits until a move finishes.
+- Trapezoidal velocity profiles to cut the jerk at the start and end of each move.
